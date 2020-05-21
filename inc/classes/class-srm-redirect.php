@@ -1,8 +1,13 @@
 <?php
 /**
  * Handle redirection
+ *
+ * @package safe-redirect-manager
  */
 
+/**
+ * Redirect functionality class
+ */
 class SRM_Redirect {
 	/**
 	 * Store whitelisted host
@@ -17,14 +22,22 @@ class SRM_Redirect {
 	 * @since 1.8
 	 */
 	public function setup() {
-		add_action( 'parse_request', array( $this, 'maybe_redirect' ), 0 );
+		/**
+		 * To only redirect on 404 pages, use:
+		 *   add_filter( 'srm_redirect_only_on_404', '__return_true' );
+		 */
+		if ( apply_filters( 'srm_redirect_only_on_404', false ) ) {
+			add_action( 'template_redirect', array( $this, 'maybe_redirect' ), 0 );
+		} else {
+			add_action( 'parse_request', array( $this, 'maybe_redirect' ), 0 );
+		}
 	}
 
 	/**
 	 * Apply whitelisted host to allowed_redirect_hosts filter
 	 *
 	 * @since 1.8
-	 * @param array $hosts
+	 * @param array $hosts Array of hosts
 	 * @return array
 	 */
 	public function filter_allowed_redirect_hosts( $hosts ) {
@@ -44,8 +57,8 @@ class SRM_Redirect {
 	 */
 	public function maybe_redirect() {
 
-		// Don't redirect from wp-admin
-		if ( is_admin() ) {
+		// Don't redirect unless not on admin. If 404 filter enabled, require query is a 404.
+		if ( is_admin() || ( apply_filters( 'srm_redirect_only_on_404', false ) && ! is_404() ) ) {
 			return;
 		}
 
@@ -57,7 +70,7 @@ class SRM_Redirect {
 		}
 
 		// get requested path and add a / before it
-		$requested_path = esc_url_raw( $_SERVER['REQUEST_URI'] );
+		$requested_path = esc_url_raw( apply_filters( 'srm_requested_path', $_SERVER['REQUEST_URI'] ) );
 		$requested_path = untrailingslashit( stripslashes( $requested_path ) );
 
 		/**
@@ -123,7 +136,10 @@ class SRM_Redirect {
 				if ( ! $matched_path && ( strrpos( $redirect_from, '*' ) === strlen( $redirect_from ) - 1 ) ) {
 					$wildcard_base = substr( $redirect_from, 0, strlen( $redirect_from ) - 1 );
 
-					// mark as match if requested path matches the base of the redirect from
+					// Remove the trailing slash from the wildcard base, matching removal from request path.
+					$wildcard_base = untrailingslashit( $wildcard_base );
+
+					// Mark as path match if requested path matches the base of the redirect from.
 					$matched_path = ( substr( $normalized_requested_path, 0, strlen( $wildcard_base ) ) === $wildcard_base );
 					if ( ( strrpos( $redirect_to, '*' ) === strlen( $redirect_to ) - 1 ) ) {
 						$redirect_to = rtrim( $redirect_to, '*' ) . ltrim( substr( $requested_path, strlen( $wildcard_base ) ), '/' );
@@ -151,7 +167,7 @@ class SRM_Redirect {
 					$redirect_to = preg_replace( '@' . $redirect_from . '@' . $regex_flag, $redirect_to, $requested_path );
 				}
 
-				$sanitized_redirect_to = esc_url_raw( $redirect_to );
+				$sanitized_redirect_to = esc_url_raw( apply_filters( 'srm_redirect_to', $redirect_to ) );
 
 				do_action( 'srm_do_redirect', $requested_path, $sanitized_redirect_to, $status_code );
 
@@ -192,4 +208,3 @@ class SRM_Redirect {
 	}
 }
 
-SRM_Redirect::factory();

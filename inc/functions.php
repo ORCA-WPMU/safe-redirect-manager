@@ -1,4 +1,9 @@
 <?php
+/**
+ * General plugin functions
+ *
+ * @package safe-redirect-manager
+ */
 
 /**
  * Get redirects from the database
@@ -10,7 +15,9 @@
  */
 function srm_get_redirects( $args = array(), $hard = false ) {
 
-	if ( $hard || false === ( $redirects = get_transient( '_srm_redirects' ) ) ) {
+	$redirects = get_transient( '_srm_redirects' );
+
+	if ( $hard || false === $redirects ) {
 
 		$redirects = array();
 
@@ -30,6 +37,8 @@ function srm_get_redirects( $args = array(), $hard = false ) {
 				'post_status'    => 'publish',
 				'paged'          => $i,
 				'fields'         => 'ids',
+				'orderby'        => 'menu_order ID',
+				'order'          => 'ASC',
 			);
 
 			$query_args = array_merge( $defaults, $args );
@@ -112,8 +121,13 @@ function srm_flush_cache() {
 function srm_check_for_possible_redirect_loops() {
 	$redirects = srm_get_redirects();
 
-	$current_url = parse_url( home_url() );
-	$this_host   = ( is_array( $current_url ) && ! empty( $current_url['host'] ) ) ? $current_url['host'] : '';
+	if ( function_exists( 'wp_parse_url' ) ) {
+		$current_url = wp_parse_url( home_url() );
+	} else {
+		$current_url = parse_url( home_url() );
+	}
+
+	$this_host = ( is_array( $current_url ) && ! empty( $current_url['host'] ) ) ? $current_url['host'] : '';
 
 	foreach ( $redirects as $redirect ) {
 		$redirect_from = $redirect['redirect_from'];
@@ -122,7 +136,12 @@ function srm_check_for_possible_redirect_loops() {
 		foreach ( $redirects as $compare_redirect ) {
 			$redirect_to = $compare_redirect['redirect_to'];
 
-			$redirect_url  = parse_url( $redirect_to );
+			if ( function_exists( 'wp_parse_url' ) ) {
+				$redirect_url = wp_parse_url( $redirect_to );
+			} else {
+				$redirect_url = parse_url( $redirect_to );
+			}
+
 			$redirect_host = ( is_array( $redirect_url ) && ! empty( $redirect_url['host'] ) ) ? $redirect_url['host'] : '';
 
 			// check if we are redirecting locally
@@ -149,16 +168,17 @@ function srm_check_for_possible_redirect_loops() {
 /**
  * Creates a redirect post, this function will be useful for import/exports scripts
  *
- * @param string $redirect_from
- * @param string $redirect_to
- * @param int    $status_code
- * @param bool   $enable_regex
- * @param string $post_status
+ * @param string $redirect_from Redirect from location
+ * @param string $redirect_to Redirect to location
+ * @param int    $status_code Redirect status code
+ * @param bool   $enable_regex Whether to enable regex or not
+ * @param string $post_status Post status
+ * @param int    $menu_order Menu order
  * @since 1.8
  * @uses wp_insert_post, update_post_meta
  * @return int|WP_Error
  */
-function srm_create_redirect( $redirect_from, $redirect_to, $status_code = 302, $enable_regex = false, $post_status = 'publish' ) {
+function srm_create_redirect( $redirect_from, $redirect_to, $status_code = 302, $enable_regex = false, $post_status = 'publish', $menu_order = 0 ) {
 	global $wpdb;
 
 	$sanitized_redirect_from = srm_sanitize_redirect_from( $redirect_from );
@@ -166,6 +186,7 @@ function srm_create_redirect( $redirect_from, $redirect_to, $status_code = 302, 
 	$sanitized_status_code   = absint( $status_code );
 	$sanitized_enable_regex  = (bool) $enable_regex;
 	$sanitized_post_status   = sanitize_key( $post_status );
+	$sanitized_menu_order    = absint( $menu_order );
 
 	// check and make sure no parameters are empty or invalid after sanitation
 	if ( empty( $sanitized_redirect_from ) || empty( $sanitized_redirect_to ) ) {
@@ -186,6 +207,7 @@ function srm_create_redirect( $redirect_from, $redirect_to, $status_code = 302, 
 		'post_type'   => 'redirect_rule',
 		'post_status' => $sanitized_post_status,
 		'post_author' => 1,
+		'menu_order'  => $sanitized_menu_order,
 	);
 
 	$post_id = wp_insert_post( $post_args );
@@ -195,7 +217,7 @@ function srm_create_redirect( $redirect_from, $redirect_to, $status_code = 302, 
 	}
 
 	// update the posts meta info
-	update_post_meta( $post_id, '_redirect_rule_from', $sanitized_redirect_from );
+	update_post_meta( $post_id, '_redirect_rule_from', wp_slash( $sanitized_redirect_from ) );
 	update_post_meta( $post_id, '_redirect_rule_to', $sanitized_redirect_to );
 	update_post_meta( $post_id, '_redirect_rule_status_code', $sanitized_status_code );
 	update_post_meta( $post_id, '_redirect_rule_from_regex', $sanitized_enable_regex );
@@ -215,7 +237,7 @@ function srm_create_redirect( $redirect_from, $redirect_to, $status_code = 302, 
  * esc_url_raw( 'test' ) == 'http://test', whereas sanitize_redirect_path( 'test' ) == '/test'
  *
  * @since 1.8
- * @param string $path
+ * @param string $path Path to sanitize
  * @return string
  */
 function srm_sanitize_redirect_to( $path ) {
@@ -238,8 +260,8 @@ function srm_sanitize_redirect_to( $path ) {
  * Sanitize redirect from path
  *
  * @since 1.8
- * @param string  $path
- * @param boolean $allow_regex
+ * @param string  $path Path to sanitize
+ * @param boolean $allow_regex Whether to allow regex
  * @return string
  */
 function srm_sanitize_redirect_from( $path, $allow_regex = false ) {
@@ -301,7 +323,8 @@ function srm_import_file( $file, $args ) {
 	}
 
 	// process all rows of the file
-	$created = $skipped = 0;
+	$created = 0;
+	$skipped = 0;
 	$headers = fgetcsv( $handle );
 
 	while ( ( $row = fgetcsv( $handle ) ) ) {
@@ -318,9 +341,10 @@ function srm_import_file( $file, $args ) {
 		$redirect_to   = srm_sanitize_redirect_to( $rule[ $args['target'] ] );
 		$status_code   = ! empty( $rule[ $args['code'] ] ) ? $rule[ $args['code'] ] : 302;
 		$regex         = ! empty( $rule[ $args['regex'] ] ) ? filter_var( $rule[ $args['regex'] ], FILTER_VALIDATE_BOOLEAN ) : false;
+		$menu_order    = ! empty( $rule[ $args['order'] ] ) ? $rule[ $args['order'] ] : 0;
 
 		// import
-		$id = srm_create_redirect( $redirect_from, $redirect_to, $status_code, $regex );
+		$id = srm_create_redirect( $redirect_from, $redirect_to, $status_code, $regex, 'publish', $menu_order );
 
 		if ( is_wp_error( $id ) ) {
 			$doing_wp_cli && WP_CLI::warning( $id );

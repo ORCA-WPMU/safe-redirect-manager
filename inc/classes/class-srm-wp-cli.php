@@ -1,8 +1,13 @@
 <?php
 /**
- * Setup SRM WP CLI commands
+ * Setup SRM WP CLI commands.
+ *
+ * @package safe-redirect-manager
  */
 
+/**
+ * WP CLI command class
+ */
 class SRM_WP_CLI extends WP_CLI_Command {
 
 
@@ -11,7 +16,7 @@ class SRM_WP_CLI extends WP_CLI_Command {
 	 *
 	 * @subcommand list
 	 */
-	public function _list() {
+	public function cli_list() {
 		$fields = array(
 			'ID',
 			'redirect_from',
@@ -47,6 +52,7 @@ class SRM_WP_CLI extends WP_CLI_Command {
 	/**
 	 * Create a redirect
 	 *
+	 * @param array $args Array of arguments
 	 * @subcommand create
 	 * @synopsis <from> <to> [<status-code>] [<enable-regex>] [<post-status>]
 	 */
@@ -87,6 +93,7 @@ class SRM_WP_CLI extends WP_CLI_Command {
 	/**
 	 * Delete a redirect
 	 *
+	 * @param array $args Array of arguments
 	 * @subcommand delete
 	 * @synopsis <id>
 	 */
@@ -119,6 +126,8 @@ class SRM_WP_CLI extends WP_CLI_Command {
 	/**
 	 * Import .htaccess file redirects
 	 *
+	 * @param array $args Array of arguments
+	 * @param array $assoc_args Array of associate arguments
 	 * @subcommand import-htaccess
 	 * @synopsis <file>
 	 */
@@ -189,12 +198,12 @@ class SRM_WP_CLI extends WP_CLI_Command {
 	 * redirection from and to URLs, regex flag and HTTP redirection code. Here
 	 * is example table:
 	 *
-	 * | source                     | target             | regex | code |
-	 * |----------------------------|--------------------|-------|------|
-	 * | /legacy-url                | /new-url           | 0     | 301  |
-	 * | /category-1                | /new-category-slug | 0     | 302  |
-	 * | /tes?t/[0-9]+/path/[^/]+/? | /go/here           | 1     | 302  |
-	 * | ...                        | ...                | ...   | ...  |
+	 * | source                     | target             | regex | code | order |
+	 * |----------------------------|--------------------|-------|------|-------|
+	 * | /legacy-url                | /new-url           | 0     | 301  | 0     |
+	 * | /category-1                | /new-category-slug | 0     | 302  | 1     |
+	 * | /tes?t/[0-9]+/path/[^/]+/? | /go/here           | 1     | 302  | 3     |
+	 * | ...                        | ...                | ...   | ...  | ...   |
 	 *
 	 * You can also use exported redirects from "Redirection" plugin, which you
 	 * can download here: /wp-admin/tools.php?page=redirection.php&sub=modules
@@ -211,11 +220,15 @@ class SRM_WP_CLI extends WP_CLI_Command {
 	 * <code-column>
 	 * : Header title for code column mapping.
 	 *
+	 * <order-column>
+	 * : Header title for order column mapping.
+	 *
+	 *
 	 * ## EXAMPLE
 	 *
 	 *     wp safe-redirect-manager import redirections.csv
 	 *
-	 * @synopsis <file> [--source=<source-column>] [--target=<target-column>] [--regex=<regex-column>] [--code=<code-column>]
+	 * @synopsis <file> [--source=<source-column>] [--target=<target-column>] [--regex=<regex-column>] [--code=<code-column>]  [--order=<order-column>]
 	 *
 	 * @since 1.7.6
 	 *
@@ -225,7 +238,8 @@ class SRM_WP_CLI extends WP_CLI_Command {
 	 */
 	public function import( $args, $assoc_args ) {
 		$mapping = wp_parse_args(
-			$assoc_args, array(
+			$assoc_args,
+			array(
 				'source' => 'source',
 				'target' => 'target',
 				'regex'  => 'regex',
@@ -233,7 +247,8 @@ class SRM_WP_CLI extends WP_CLI_Command {
 			)
 		);
 
-		$created = $skipped = 0;
+		$created = 0;
+		$skipped = 0;
 
 		foreach ( $args as $file ) {
 			$processed = srm_import_file( $file, $mapping );
@@ -248,5 +263,3 @@ class SRM_WP_CLI extends WP_CLI_Command {
 		WP_CLI::success( "All done! {$created} redirects were imported, {$skipped} were skipped" );
 	}
 }
-
-WP_CLI::add_command( 'safe-redirect-manager', 'SRM_WP_CLI' );
